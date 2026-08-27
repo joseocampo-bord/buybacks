@@ -690,7 +690,6 @@ export default function QuoteDetail() {
                 const striped = i % 2 === 0
                 const selected = selectedIds.has(row.id)
                 const { danger, extraDangerTags, success, extraSuccessTags } = splitTags(row.tags)
-                const specs = row.spec.split(', ')
                 const photos = Array.from({ length: TOOL_PHOTO_COUNT }, () => toolCoverPhoto)
                 const priceDraft = priceDrafts[row.id] ?? (row.price != null ? row.price.toFixed(2) : '')
                 const draftValue = Number.parseFloat(priceDraft)
