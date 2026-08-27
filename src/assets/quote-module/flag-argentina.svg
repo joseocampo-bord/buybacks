@@ -1,0 +1,15 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="flags/rounded/argentina" clip-path="url(#clip0_0_10931)">
+<path id="Vector" d="M6 12C9.31371 12 12 9.31371 12 6C12 2.68629 9.31371 0 6 0C2.68629 0 0 2.68629 0 6C0 9.31371 2.68629 12 6 12Z" fill="white"/>
+<g id="Group">
+<path id="Vector_2" d="M6 0C3.62123 0 1.56586 1.38434 0.595359 3.39131H11.4046C10.4341 1.38434 8.37874 0 6 0V0Z" fill="#3ECBF8"/>
+<path id="Vector_3" d="M6 12C8.37874 12 10.4341 10.6157 11.4046 8.60869H0.595359C1.56586 10.6157 3.62123 12 6 12Z" fill="#3ECBF8"/>
+</g>
+<path id="Vector_4" d="M7.79332 6L7.06055 6.3447L7.45076 7.05436L6.65505 6.90213L6.55423 7.70594L6 7.11476L5.44575 7.70594L5.34495 6.90213L4.54924 7.05434L4.93943 6.34467L4.20668 6L4.93945 5.6553L4.54924 4.94566L5.34492 5.09787L5.44577 4.29405L6 4.88524L6.55425 4.29405L6.65505 5.09787L7.45078 4.94566L7.06057 5.65533L7.79332 6Z" fill="#FFDA2C"/>
+</g>
+<defs>
+<clipPath id="clip0_0_10931">
+<rect width="12" height="12" fill="white"/>
+</clipPath>
+</defs>
+</svg>

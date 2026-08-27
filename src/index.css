@@ -1,0 +1,70 @@
+@import 'tailwindcss';
+
+/*
+ * .bord Design System — SOGA product tokens (light mode only).
+ * This app renders the SOGA surface, so only the "Light (Soga)" column
+ * from docs/design-system.md is wired up. Reference that file, not DASH's
+ * dark-mode values, when adding new tokens.
+ * Registering these under @theme makes Tailwind generate matching
+ * utilities automatically: bg-layout-level-1, text-content-secondary,
+ * border-stroke-default, etc.
+ */
+@theme {
+  --font-sans: 'DM Sans', system-ui, sans-serif;
+
+  /* Layout */
+  --color-layout-background: #fafaf9;
+  --color-layout-level-1: #ffffff;
+  --color-layout-level-2: #fafaf9;
+  --color-layout-opacity: rgb(0 0 0 / 5%);
+
+  /* Content & stroke */
+  --color-content-default: #070f21;
+  --color-content-secondary: #626c82;
+  --color-stroke-default: #ebebeb;
+  --color-stroke-interactive: #b4b4b4;
+
+  /* Primary */
+  --color-primary-default: #22cfab;
+  --color-primary-hover: #00b188;
+  --color-primary-fg: #ffffff;
+  --color-secondary-bg: #1b202f;
+
+  /* Semantic states */
+  --color-success-fg: #09a432;
+  --color-success-bg: #eaf9f4;
+  --color-danger-fg: #fc543d;
+  --color-danger-bg: rgb(252 84 61 / 10%);
+  --color-warning-fg: #dcc410;
+  --color-warning-bg: rgb(220 196 16 / 10%);
+  --color-informative-fg: #23a5ff;
+  --color-informative-bg: rgb(35 165 255 / 10%);
+
+  /* Complementary */
+  --color-complementary-blue: #23a5ff;
+  --color-complementary-red: #fc543d;
+  --color-complementary-yellow: #dcc410;
+  --color-complementary-default: #070f21;
+
+  /* Tags */
+  --color-tag-blue-bg: #dff2ff;
+  --color-tag-pink-bg: #e897ff;
+  --color-tag-purple-bg: #885ef7;
+  --color-tag-brown-bg: #a95c14;
+
+  /* Status badge dots (5 states — no purple) */
+  --color-status-pending: #626c82;
+  --color-status-in-process: #23a5ff;
+  --color-status-done: #09a432;
+  --color-status-warning: #dcc410;
+  --color-status-danger: #fc543d;
+
+  /* Radius */
+  --radius-card: 8px;
+  --radius-input: 6px;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-layout-background);
+}
