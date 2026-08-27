@@ -14,7 +14,7 @@ export default function DetailTopBar({ breadcrumbId }: { breadcrumbId: string })
           onClick={() => navigate(-1)}
           className="flex items-center gap-[4px] text-[12px] leading-normal text-content-secondary hover:text-content-default"
         >
-          <img src={iconChevronLeft} alt="" className="size-[12px] rotate-180" />
+          <img src={iconChevronLeft} alt="" className="size-[12px]" />
           Volver
         </button>
         <p className="whitespace-nowrap text-[14px] leading-normal text-content-secondary">

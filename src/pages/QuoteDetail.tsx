@@ -648,7 +648,7 @@ export default function QuoteDetail() {
                 (including Precio) has an explicit width — leaving one column unsized
                 made it greedily absorb 100% of the leftover space as a giant gap. */}
             <colgroup>
-              <col className="w-[44px]" />
+              <col className="w-[38px]" />
               <col className="w-[176px]" />
               <col className="w-[130px]" />
               <col className="w-[105px]" />
@@ -672,7 +672,9 @@ export default function QuoteDetail() {
                     {someSelected && <span className="block h-[2px] w-[8px] rounded-full bg-white" />}
                   </button>
                 </th>
-                <th className="px-[12px] py-[12px] text-[12px] font-bold leading-normal text-content-default">Modelo</th>
+                <th className="border-l border-solid border-stroke-default px-[12px] py-[12px] text-[12px] font-bold leading-normal text-content-default">
+                  Modelo
+                </th>
                 <th className="px-[12px] py-[12px] text-[12px] font-bold leading-normal text-content-default">Serial</th>
                 <th className="px-[12px] py-[12px] text-[12px] font-bold leading-normal text-content-default">Condición</th>
                 <th className="px-[12px] py-[12px] text-[12px] font-bold leading-normal text-content-default">Detalles</th>
@@ -715,7 +717,7 @@ export default function QuoteDetail() {
                         {selected && <img src={iconCheck} alt="" className="size-[9px] brightness-0 invert" />}
                       </button>
                     </td>
-                    <td className="px-[12px] py-[16px]">
+                    <td className="border-l border-solid border-stroke-default px-[12px] py-[16px]">
                       <div className="flex flex-col items-start gap-[6px]">
                         <p className="text-[12px] leading-normal text-content-default">{row.model}</p>
                         {/* Revealed on row hover — see Figma "expanded row" reference (31778:776713) */}
