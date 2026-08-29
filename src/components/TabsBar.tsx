@@ -1,3 +1,5 @@
+import { BUYBACKS_BY_TAB, TAB_CONFIG, type TabKey } from '../data/buybacks'
+
 type PillOption = {
   label: string
   active?: boolean
@@ -31,33 +33,48 @@ export function PillTabs() {
   )
 }
 
-type UnderlineTab = {
-  label: string
-  count: number
-  badgeColor: string
-  active?: boolean
-}
-
-const UNDERLINE_TABS: UnderlineTab[] = [
+// Per-tab underline color — pixel-matched against the Figma "Por cotizar"
+// reference for the 2 tabs that were actually verified there; the other 3
+// (Pendiente de aprobación / Por facturar / Compradas / Vencidas) reuse the
+// closest status-badge family token. This is the TAB pill's own color, not
+// the same thing as the per-card status-badge mapping in data/buybacks.ts
+// §5 (a tab groups multiple `estado`s, e.g. "Por facturar" = aprobado +
+// aprobado_parcial, so it can't just inherit one card's badge color 1:1).
+const TAB_BADGE_COLOR: Record<TabKey, string> = {
   // 'Por cotizar' uses an amber (#e8a13f) that matches the Figma screenshot pixel-for-pixel
   // but has no corresponding token in docs/design-system.md (the doc's only warning value,
   // #DCC410, is a different yellow-olive hue) — unmapped, left as raw hex intentionally.
-  { label: 'Por cotizar', count: 15, badgeColor: '#e8a13f', active: true },
+  por_cotizar: '#e8a13f',
   // informative/fg (status-badge "in-process")
-  { label: 'Pendiente de aprobación', count: 20, badgeColor: 'var(--color-informative-fg)' },
-  // BUG FIX: was '#22cfab' (primary teal, not a status-badge color) — Figma shows this pill
-  // in the same blue as "Pendiente de aprobación" (informative/in-process).
-  { label: 'Por facturar', count: 30, badgeColor: 'var(--color-informative-fg)' },
-  // BUG FIX: was '#626c82' (status-badge "pending" gray) — Figma shows this pill in green
-  // (status-badge "done"/success), not gray.
-  { label: 'Compradas', count: 5, badgeColor: 'var(--color-success-fg)' },
-  // danger/fg (status-badge "danger")
-  { label: 'Vencidas', count: 2, badgeColor: 'var(--color-danger-fg)' },
-]
+  aprobadas: 'var(--color-informative-fg)',
+  // Figma shows this pill in the same blue as "Aprobadas" — kept even though the per-card
+  // status-badge for aprobado/aprobado_parcial is "warning" (yellow, §5); the tab pill's own
+  // color was verified against Figma separately from the card badges.
+  pendientes_facturacion: 'var(--color-informative-fg)',
+  // status-badge "done"/success
+  compradas: 'var(--color-success-fg)',
+  // status-badge "danger"
+  vencidas: 'var(--color-danger-fg)',
+}
 
-function UnderlineTabButton({ label, count, badgeColor, active }: UnderlineTab) {
+function UnderlineTabButton({
+  tabKey,
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  tabKey: TabKey
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+}) {
+  const badgeColor = TAB_BADGE_COLOR[tabKey]
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className="flex min-w-[108px] flex-col items-center justify-center px-[24px] py-[8px]"
       style={
         active
@@ -89,17 +106,34 @@ function UnderlineTabButton({ label, count, badgeColor, active }: UnderlineTab) 
           </p>
         </div>
       </div>
-    </div>
+    </button>
   )
 }
 
-export function UnderlineTabsWithCta() {
+export function UnderlineTabsWithCta({
+  activeTab,
+  onChange,
+}: {
+  activeTab: TabKey
+  onChange: (tab: TabKey) => void
+}) {
+  const tabKeys = Object.keys(TAB_CONFIG) as TabKey[]
+
   return (
     <div className="relative flex items-center">
       <div className="absolute bottom-0 left-0 right-0 h-px bg-stroke-default" />
       <div className="flex items-center">
-        {UNDERLINE_TABS.map((tab) => (
-          <UnderlineTabButton key={tab.label} {...tab} />
+        {tabKeys.map((key) => (
+          <UnderlineTabButton
+            key={key}
+            tabKey={key}
+            label={TAB_CONFIG[key].label}
+            // §7 — "cada tab muestra el conteo de BBX en ese estado", derived from
+            // the mock dataset length rather than a hardcoded number.
+            count={BUYBACKS_BY_TAB[key].length}
+            active={activeTab === key}
+            onClick={() => onChange(key)}
+          />
         ))}
       </div>
     </div>

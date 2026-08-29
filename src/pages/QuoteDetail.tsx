@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import DetailTopBar from '../components/DetailTopBar'
+import { findBuyback } from '../data/buybacks'
 import ToolDetailDrawer from '../components/ToolDetailDrawer'
 import ImageViewerModal from '../components/ImageViewerModal'
 import RejectReasonModal from '../components/RejectReasonModal'
@@ -15,6 +16,7 @@ import iconTime from '../assets/quote-detail/icon-time.svg'
 import statusDotInformative from '../assets/quote-detail/status-dot-informative.svg'
 import statusDotWarning from '../assets/quote-detail/status-dot-warning.svg'
 import statusDotDanger from '../assets/quote-detail/status-dot-danger.svg'
+import statusDotSuccess from '../assets/quote-detail/status-dot-success.svg'
 import iconChevronDown from '../assets/quote-detail/icon-chevron-down.svg'
 import iconExternalLink from '../assets/quote-detail/icon-external-link.svg'
 import iconPerson from '../assets/quote-detail/icon-person.svg'
@@ -133,6 +135,17 @@ const COUNTRY_FLAGS: Record<string, string> = {
   Venezuela: flagVenezuela,
 }
 
+// Lowercase-keyed variant matching the list's `CountryFlag` type (data/buybacks.ts),
+// used for the header's real "País" chip — separate from COUNTRY_FLAGS above,
+// which keys by the per-tool `row.country` field (capitalized, unrelated data).
+const LOT_COUNTRY_FLAGS: Record<string, string> = {
+  mexico: flagMexico,
+  colombia: flagColombia,
+  argentina: flagArgentina,
+  turkey: flagTurkey,
+  venezuela: flagVenezuela,
+}
+
 // Extra fields only revealed when a row expands on hover — see the
 // "31778:776713" Figma reference (a hover/expanded state of this same table,
 // not a separate screen).
@@ -165,12 +178,32 @@ const INITIAL_TOOL_ROWS: ToolRow[] = [
   { id: '7', model: 'MacBook Pro 16"', spec: 'M3 Max, 36GB, 2TB SSD', serial: '58F9012S65-24', grade: 'A', tags: [{ label: 'Teclado', tone: 'success' }, { label: 'Carcasa', tone: 'success' }], comment: 'Sin comentarios', lastBuyback: '$225.00', country: 'Colombia', status: 'pending', price: null, rejectReason: null },
 ]
 
-type BuybackStatus = 'por-cotizar' | 'pendiente-aprobacion' | 'cancelado'
+// The interactive quoting flow this page implements only really moves
+// through por-cotizar → pendiente-aprobacion → cancelado. The other members
+// below (aprobado, aprobado-parcial, rechazado, vencido, comprado) exist so
+// a buyback opened from one of the other list tabs shows its real status —
+// they're read-only here: none of this page's actions can produce them.
+type BuybackStatus =
+  | 'por-cotizar'
+  | 'pendiente-aprobacion'
+  | 'cancelado'
+  | 'aprobado'
+  | 'aprobado-parcial'
+  | 'rechazado'
+  | 'vencido'
+  | 'comprado'
 
 const STATUS_CONFIG: Record<BuybackStatus, { label: string; border: string; text: string; dot: string }> = {
   'por-cotizar': { label: 'Por cotizar', border: 'border-warning-fg', text: 'text-content-default', dot: statusDotWarning },
   'pendiente-aprobacion': { label: 'Pendiente de aprobación', border: 'border-informative-fg', text: 'text-content-default', dot: statusDotInformative },
   cancelado: { label: 'Cancelado', border: 'border-danger-fg', text: 'text-content-default', dot: statusDotDanger },
+  // Matches data/buybacks.ts's STATUS_BADGE_CONFIG kind mapping (§5): aprobado/
+  // aprobado-parcial are "warning", rechazado/vencido are "danger", comprado is "done".
+  aprobado: { label: 'Aprobado', border: 'border-warning-fg', text: 'text-content-default', dot: statusDotWarning },
+  'aprobado-parcial': { label: 'Aprobado parcial', border: 'border-warning-fg', text: 'text-content-default', dot: statusDotWarning },
+  rechazado: { label: 'Rechazado', border: 'border-danger-fg', text: 'text-content-default', dot: statusDotDanger },
+  vencido: { label: 'Vencido', border: 'border-danger-fg', text: 'text-content-default', dot: statusDotDanger },
+  comprado: { label: 'Comprado', border: 'border-success-fg', text: 'text-content-default', dot: statusDotSuccess },
 }
 
 type SlaType = 'regular' | 'cto'
@@ -256,7 +289,14 @@ function MetricCard({
 
 export default function QuoteDetail() {
   const { id } = useParams()
-  const displayId = id ?? 'BB° 1234'
+  // Real data from the list, looked up by the bbId in the URL — falls back to
+  // the original static placeholders when there's no match (e.g. someone
+  // hits this route directly with an id that isn't in the mock list). The
+  // per-tool table below stays its own separate mock either way: the list's
+  // Buyback type only has aggregate counts, not individual tool records.
+  const found = id ? findBuyback(id) : null
+  const buyback = found?.buyback ?? null
+  const displayId = buyback?.bbId ?? id ?? 'BB° 1234'
 
   const [tools, setTools] = useState<ToolRow[]>(INITIAL_TOOL_ROWS)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -267,7 +307,30 @@ export default function QuoteDetail() {
   const [rejectTargetIds, setRejectTargetIds] = useState<string[] | null>(null)
   const [orderSummaryOpen, setOrderSummaryOpen] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
-  const [buybackStatus, setBuybackStatus] = useState<BuybackStatus>('por-cotizar')
+  // This page's interactive quote/reject/send flow only models 3 states
+  // (por-cotizar → pendiente-aprobacion → cancelado, via the actions below).
+  // Opened from any other list tab, the buyback's real `estado` is mapped
+  // 1:1 just for accurate display — those states are read-only here, this
+  // page's tools/SLA actions don't produce or expect them.
+  const [buybackStatus, setBuybackStatus] = useState<BuybackStatus>(() => {
+    if (!buyback) return 'por-cotizar'
+    switch (buyback.estado) {
+      case 'por_cotizar':
+        return 'por-cotizar'
+      case 'pendiente_aprobacion':
+        return 'pendiente-aprobacion'
+      case 'aprobado':
+        return 'aprobado'
+      case 'aprobado_parcial':
+        return 'aprobado-parcial'
+      case 'rechazado':
+        return 'rechazado'
+      case 'vencido':
+        return 'vencido'
+      case 'comprado':
+        return 'comprado'
+    }
+  })
   const [toast, setToast] = useState<{ title: string; message: string } | null>(null)
   // Explicit "edit" click on an already-managed row's price cell — independent
   // of hover, so the editor stays open (pre-filled) after the mouse leaves.
@@ -406,7 +469,10 @@ export default function QuoteDetail() {
           <div className="flex w-full items-center justify-between px-[12px]">
             <div className="flex flex-col items-start gap-[8px]">
               <div className="flex items-center gap-[12px]">
-                <p className="whitespace-nowrap text-[20px] font-bold leading-normal text-content-default">Buyback N°9021</p>
+                {/* displayId is the real bbId (e.g. "BB° 9817") when the list
+                    linked here with a known one — already reads as a full
+                    identifier, so no extra "Buyback N°" prefix needed. */}
+                <p className="whitespace-nowrap text-[20px] font-bold leading-normal text-content-default">{displayId}</p>
                 <div className={`flex items-center gap-[4px] rounded-[24px] border border-solid ${statusConfig.border} py-[4px] pl-[6px] pr-[8px]`}>
                   <img src={statusConfig.dot} alt="" className="size-[8px]" />
                   <p className={`whitespace-nowrap text-[12px] leading-normal ${statusConfig.text}`}>{statusConfig.label}</p>
@@ -418,16 +484,26 @@ export default function QuoteDetail() {
               <div className="flex items-center gap-[8px]">
                 <Chip>
                   <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-secondary">País:</p>
-                  <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-default">Varios</p>
+                  <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-default">
+                    {!buyback ? 'Varios' : buyback.paises.length > 1 ? 'Varios' : buyback.paises[0]}
+                  </p>
                   <div className="flex items-center">
-                    <img src={flagArgentina} alt="" className="size-[12px] shrink-0 rounded-full" style={{ marginRight: -4 }} />
-                    <img src={flagColombia} alt="" className="size-[12px] shrink-0 rounded-full" style={{ marginRight: -4 }} />
-                    <img src={flagMexico} alt="" className="size-[12px] shrink-0 rounded-full" />
+                    {(buyback?.paises ?? ['argentina', 'colombia', 'mexico']).map((pais, i, arr) => (
+                      <img
+                        key={pais}
+                        src={LOT_COUNTRY_FLAGS[pais]}
+                        alt={pais}
+                        className="size-[12px] shrink-0 rounded-full"
+                        style={{ marginRight: i === arr.length - 1 ? 0 : -4 }}
+                      />
+                    ))}
                   </div>
                 </Chip>
                 <Chip>
                   <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-secondary">Creación:</p>
-                  <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-default">12/03/2026</p>
+                  <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-default">
+                    {buyback?.creacion ?? '12/03/2026'}
+                  </p>
                 </Chip>
                 <div className="relative">
                   <button
@@ -526,7 +602,9 @@ export default function QuoteDetail() {
                   Cliente standard
                 </p>
                 <div className="flex items-center gap-[4px]">
-                  <p className="whitespace-nowrap text-[14px] leading-normal text-content-default">Playtoy</p>
+                  <p className="whitespace-nowrap text-[14px] leading-normal text-content-default">
+                    {buyback?.cliente.nombre ?? 'Playtoy'}
+                  </p>
                   <img src={iconExternalLink} alt="" className="size-[12px] opacity-60" />
                 </div>
               </div>
@@ -536,10 +614,13 @@ export default function QuoteDetail() {
               <p className="w-[145px] whitespace-nowrap text-[10px] uppercase leading-normal tracking-[1px] text-content-secondary">Solicitante</p>
               <div className="flex items-center gap-[4px]">
                 <img src={iconPerson} alt="" className="size-[14px] opacity-60" />
-                <p className="truncate text-[14px] leading-normal text-content-default">Vicente</p>
+                <p className="truncate text-[14px] leading-normal text-content-default">{buyback?.solicitadoPor ?? 'Vicente'}</p>
               </div>
             </div>
 
+            {/* Número de contacto / Correo aren't part of the list's Buyback
+                contract (handoff §9 has no contact fields) — left as generic
+                placeholders rather than inventing fake contact data. */}
             <div className="flex w-[200px] flex-col items-start gap-[4px]">
               <p className="w-[145px] whitespace-nowrap text-[10px] uppercase leading-normal tracking-[1px] text-content-secondary">
                 Número de contacto
