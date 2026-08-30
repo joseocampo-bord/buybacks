@@ -7,9 +7,31 @@ import flagTurkey from '../assets/quote-module/flag-turkey.svg'
 import flagVenezuela from '../assets/quote-module/flag-venezuela.svg'
 import iconTime from '../assets/quote-module/icon-time.svg'
 import iconCheckCircle from '../assets/quote-module/icon-check-circle.svg'
-import statusDot from '../assets/quote-module/status-dot.svg'
+import statusDotInformative from '../assets/quote-detail/status-dot-informative.svg'
+import statusDotWarning from '../assets/quote-detail/status-dot-warning.svg'
+import statusDotDanger from '../assets/quote-detail/status-dot-danger.svg'
 
-import { TAB_CONFIG, ctaLabelFor, counterFor, type Buyback, type CountryFlag, type TabKey } from '../data/buybacks'
+import {
+  TAB_CONFIG,
+  ctaLabelFor,
+  counterFor,
+  type Buyback,
+  type ClienteVencimientoSemaforo,
+  type CountryFlag,
+  type FacturacionSubIndicador,
+  type TabKey,
+} from '../data/buybacks'
+
+// Antes esto coloreaba el BORDE del chip y usaba un dot fijo (siempre azul,
+// `quote-module/status-dot.svg`) sin importar el semáforo — el color vivía en
+// el lugar contrario al de la interna (QuoteDetail.tsx: borde neutro, el dot
+// es el que cambia de color). Ahora usa el mismo criterio en las dos
+// pantallas: borde neutro, sólo el dot indica el estado.
+const SEMAFORO_DOT: Record<ClienteVencimientoSemaforo, string> = {
+  ok: statusDotInformative,
+  warning: statusDotWarning,
+  vencido: statusDotDanger,
+}
 
 const FLAGS: Record<CountryFlag, string> = {
   mexico: flagMexico,
@@ -27,6 +49,16 @@ const FACTURACION_LABEL: Record<NonNullable<Buyback['facturacion']>['subIndicado
   factura_en_revision: 'Factura en revisión',
   ok_cupon_pendiente: 'OK · cupón pendiente',
   cupon_parcial: 'Cupón parcial',
+}
+
+// Antes los 4 sub-indicadores se pintaban del mismo amarillo — sin señal de
+// progreso. Mismo criterio de color que la interna (InvoiceCountryPanel):
+// pendiente = warning, en revisión = informative, OK/cupón = success.
+const FACTURACION_COLOR: Record<FacturacionSubIndicador, string> = {
+  factura_pendiente: 'text-warning-fg',
+  factura_en_revision: 'text-informative-fg',
+  ok_cupon_pendiente: 'text-success-fg',
+  cupon_parcial: 'text-success-fg',
 }
 
 function Field({
@@ -277,23 +309,49 @@ export default function BuybackCard({ buyback, tab, onRowClick }: BuybackCardPro
           <p className="whitespace-nowrap text-[12px] leading-normal text-content-default">{buyback.creacion}</p>
         </Field>
 
-        {buyback.tiempoTranscurrido && (
-          <Field title="Tiempo transcurrido">
-            <div className="flex items-center gap-[4px] rounded-[24px] border border-solid border-informative-fg px-[6px] py-[2px]">
-              <img src={statusDot} alt="" className="size-[8px] shrink-0" />
+        {/* Once the offer's sent (pendiente_aprobacion), Martín's own SLA
+            clock has stopped counting — show the CLIENT's response deadline
+            instead here, a different counter and a different date entirely
+            (see data/buybacks.ts `vencimientoCliente`). Falls back to the
+            existing "Tiempo transcurrido" chip for every other tab/estado,
+            unchanged. */}
+        {buyback.vencimientoCliente ? (
+          <Field title="Vencimiento cliente">
+            <div className="flex items-center gap-[4px] rounded-[24px] border border-solid border-stroke-default px-[6px] py-[2px]">
+              <img src={SEMAFORO_DOT[buyback.vencimientoCliente.semaforo]} alt="" className="size-[8px] shrink-0" />
               <p className="whitespace-nowrap text-[12px] leading-normal text-content-default">
-                {buyback.tiempoTranscurrido.valor} {buyback.tiempoTranscurrido.unidad}
+                {buyback.vencimientoCliente.fecha}
               </p>
             </div>
           </Field>
+        ) : (
+          buyback.tiempoTranscurrido && (
+            <Field title="Tiempo transcurrido">
+              {/* Antes el dot/borde siempre era informative sin importar
+                  `tiempoTranscurrido.semaforo` — un BBX en "warning" (cerca
+                  de incumplir el SLA) se veía idéntico a uno "ok". Mismo
+                  criterio dot-only que arriba. */}
+              <div className="flex items-center gap-[4px] rounded-[24px] border border-solid border-stroke-default px-[6px] py-[2px]">
+                <img src={SEMAFORO_DOT[buyback.tiempoTranscurrido.semaforo]} alt="" className="size-[8px] shrink-0" />
+                <p className="whitespace-nowrap text-[12px] leading-normal text-content-default">
+                  {buyback.tiempoTranscurrido.valor} {buyback.tiempoTranscurrido.unidad}
+                </p>
+              </div>
+            </Field>
+          )
         )}
 
-        {/* §4 (PROPUESTA) — facturación sub-indicator. Only aprobado/aprobado_parcial
-            buybacks carry a `facturacion` field, so this alone gates it correctly
-            now that "Aprobación y facturación" also holds pendiente_aprobacion cards. */}
-        {buyback.facturacion && (
+        {/* §4 (PROPUESTA) — facturación sub-indicator. Sólo se muestra en
+            `aprobado`/`aprobado_parcial` (la fase real de "Por facturar") —
+            antes se mostraba para cualquier estado con `facturacion` presente,
+            lo que dejaba un badge "OK · cupón pendiente" viejo/contradictorio
+            en tarjetas ya `comprado` (el campo puede quedar poblado como
+            snapshot histórico). Antes también todos los sub-indicadores se
+            veían del mismo amarillo — "OK · cupón pendiente" (buena noticia)
+            no debería lucir igual que "Factura pendiente" (nada hecho aún). */}
+        {(buyback.estado === 'aprobado' || buyback.estado === 'aprobado_parcial') && buyback.facturacion && (
           <Field title="Facturación">
-            <p className="whitespace-nowrap text-[11px] font-medium leading-normal text-warning-fg">
+            <p className={`whitespace-nowrap text-[11px] font-medium leading-normal ${FACTURACION_COLOR[buyback.facturacion.subIndicador]}`}>
               {FACTURACION_LABEL[buyback.facturacion.subIndicador]}
             </p>
           </Field>

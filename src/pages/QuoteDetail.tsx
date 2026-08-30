@@ -2,7 +2,20 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
 import DetailTopBar from '../components/DetailTopBar'
-import { findBuyback } from '../data/buybacks'
+import type { ClienteVencimientoSemaforo, CountryFlag } from '../data/buybacks'
+import {
+  bbxActions,
+  buildFacturaBlocks,
+  useBbxState,
+  STAGE_BY_STATUS,
+  type BuybackStatus,
+  type Stage,
+  type ToolRow,
+} from '../store/bbxStore'
+import { formatUSD, pluralizeTools, sumByCountry } from '../lib/format'
+import { GRADE_STYLES, COUNTRY_FLAGS, TOOL_PHOTO_COUNT, splitTags, InfoTooltip, ExtraTagsBadge, ToolTableRow, ToolTable } from '../components/ToolTable'
+import InvoiceCountryPanel, { type PaisFacturaBlock } from '../components/InvoiceCountryPanel'
+import HistorialModal from '../components/HistorialModal'
 import ToolDetailDrawer from '../components/ToolDetailDrawer'
 import ImageViewerModal from '../components/ImageViewerModal'
 import RejectReasonModal from '../components/RejectReasonModal'
@@ -45,95 +58,16 @@ import headerSearch from '../assets/layout/header-search.svg'
 
 const TABLE_FILTERS = ['Modelo', 'País', 'Condición', 'Estado de la gestión']
 
-type Grade = 'A' | 'B' | 'C' | 'D' | 'N'
-
-const GRADE_STYLES: Record<Grade, string> = {
-  A: 'bg-success-fg text-white',
-  B: 'bg-informative-fg text-white',
-  C: 'bg-warning-fg text-white',
-  D: 'bg-danger-fg text-white',
-  N: 'bg-content-secondary text-white',
-}
-
-type DetailTag = { label: string; tone: 'success' | 'danger' }
-
-type ManagementStatus = 'pending' | 'quoted' | 'rejected'
-
-// Danger tags always render on their own line (with the red x-circle icon),
-// success tags always on their own line (green check-circle) — never mixed
-// on the same line. The danger line is the always-visible default; the
-// success line only needs a hover reveal when a danger line exists above it
-// (otherwise there's nothing to hide it behind, so it just becomes default).
-const VISIBLE_TAGS_PER_LINE = 2
-
-function splitTags(tags: DetailTag[]) {
-  const danger = tags.filter((t) => t.tone === 'danger')
-  const success = tags.filter((t) => t.tone === 'success')
-  return {
-    danger: danger.slice(0, VISIBLE_TAGS_PER_LINE),
-    extraDangerTags: danger.slice(VISIBLE_TAGS_PER_LINE),
-    success: success.slice(0, VISIBLE_TAGS_PER_LINE),
-    extraSuccessTags: success.slice(VISIBLE_TAGS_PER_LINE),
-  }
-}
-
-// Small "ⓘ" info icon with a hover tooltip explaining a value — same pattern
-// as the "Total del lote" breakdown and the extra-tags badges.
-function InfoTooltip({ message }: { message: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="relative flex shrink-0" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <span className="flex size-[12px] items-center justify-center rounded-full border border-solid border-stroke-interactive text-[8px] leading-none text-content-secondary">
-        i
-      </span>
-      {open && (
-        <div className="absolute left-1/2 top-[calc(100%+6px)] z-30 w-max max-w-[160px] -translate-x-1/2 rounded-[6px] border border-solid border-stroke-default bg-layout-level-1 px-[8px] py-[6px] text-[10px] normal-case leading-normal text-content-default shadow-[0px_8px_24px_rgba(7,15,33,0.16)]">
-          {message}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// "+N" badge for tags hidden past the visible cap — hovering it reveals the
-// rest in a tooltip, same pattern as the "Total del lote" country breakdown.
-function ExtraTagsBadge({ tags, tone }: { tags: DetailTag[]; tone: 'danger' | 'success' }) {
-  const [open, setOpen] = useState(false)
-  if (tags.length === 0) return null
-
-  const toneClass = tone === 'danger' ? 'bg-danger-bg text-danger-fg' : 'bg-success-bg text-success-fg'
-
-  return (
-    <div className="relative flex" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
-      <span className={`whitespace-nowrap rounded-[12px] px-[8px] py-[2px] text-[10px] leading-normal ${toneClass}`}>
-        +{tags.length}
-      </span>
-      {open && (
-        <div className="absolute left-1/2 top-[calc(100%+8px)] z-30 flex w-max max-w-[240px] -translate-x-1/2 flex-col gap-[10px] rounded-[12px] border border-solid border-stroke-default bg-layout-level-1 p-[16px] shadow-[0px_16px_40px_rgba(7,15,33,0.16)]">
-          {tags.map((tag) => (
-            <div key={tag.label} className="flex items-center gap-[8px]">
-              <img src={tone === 'danger' ? iconXCircle : iconCheckCircle} alt="" className="size-[16px] shrink-0" />
-              <span className="whitespace-nowrap text-[14px] leading-normal text-content-default">{tag.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// Every tool always has exactly 9 photos (a fixed business rule, not mock
-// variance) — reused as the same generic stock laptop photo the Figma source
-// itself uses for every tool.
-const TOOL_PHOTO_COUNT = 9
-
-const COUNTRY_FLAGS: Record<string, string> = {
-  Mexico: flagMexico,
-  Colombia: flagColombia,
-  Argentina: flagArgentina,
-  Turkey: flagTurkey,
-  Venezuela: flagVenezuela,
-}
+// Grade/DetailTag/ManagementStatus/ClientDecision/ClientRejectReason/ToolRow
+// + the per-stage mock lotes now live in src/store/bbxStore.ts (shared with
+// BbxDashDetail.tsx, the Dash/cliente perspective on this same BBX) — see
+// that file's comments for the "granularidad del estado en vivo" open
+// decision that used to sit here.
+//
+// GRADE_STYLES/COUNTRY_FLAGS/TOOL_PHOTO_COUNT/splitTags/InfoTooltip/
+// ExtraTagsBadge/ToolTableRow/ToolTable moved to src/components/ToolTable.tsx
+// (imported above) — shared with BbxDashDetail.tsx so Dash renders the exact
+// same table/row/hover behaviors Soga does, not a second implementation.
 
 // Lowercase-keyed variant matching the list's `CountryFlag` type (data/buybacks.ts),
 // used for the header's real "País" chip — separate from COUNTRY_FLAGS above,
@@ -148,50 +82,7 @@ const LOT_COUNTRY_FLAGS: Record<string, string> = {
 
 // Extra fields only revealed when a row expands on hover — see the
 // "31778:776713" Figma reference (a hover/expanded state of this same table,
-// not a separate screen).
-type ToolRow = {
-  id: string
-  model: string
-  spec: string
-  serial: string
-  grade: Grade
-  tags: DetailTag[]
-  comment: string
-  lastBuyback: string
-  country: string
-  status: ManagementStatus
-  price: number | null
-  rejectReason: string | null
-}
-
-// Tags use real accessory/component vocabulary from a trade-in inspection
-// checklist (what's included/working vs. missing/faulty) — not vague
-// adjectives like "Rayones"/"Golpe"/"Limpio"/"Sin novedades". Varied and
-// non-repetitive across rows rather than reusing the same 2-3 terms.
-const INITIAL_TOOL_ROWS: ToolRow[] = [
-  { id: '1', model: 'MacBook Pro 16"', spec: 'M3 Pro, 18GB, 512GB SSD', serial: '98F4829K93-24', grade: 'D', tags: [{ label: 'Cargador', tone: 'danger' }, { label: 'Caja original', tone: 'danger' }, { label: 'Stickers', tone: 'danger' }, { label: 'Táctil', tone: 'danger' }, { label: 'Bisagra', tone: 'danger' }, { label: 'Enciende', tone: 'success' }, { label: 'Cámara', tone: 'success' }], comment: 'Sin comentarios', lastBuyback: '$189.00', country: 'Mexico', status: 'pending', price: null, rejectReason: null },
-  { id: '2', model: 'MacBook Air 13"', spec: 'M2, 8GB, 256GB SSD', serial: '77H2931L44-19', grade: 'A', tags: [{ label: 'Batería', tone: 'success' }, { label: 'Trackpad', tone: 'success' }], comment: 'Cliente reportó batería en buen estado', lastBuyback: '$210.00', country: 'Colombia', status: 'pending', price: null, rejectReason: null },
-  { id: '3', model: 'MacBook Pro 14"', spec: 'M3, 16GB, 1TB SSD', serial: '65D5820M12-22', grade: 'B', tags: [{ label: 'Cable', tone: 'danger' }, { label: 'Bocinas', tone: 'danger' }, { label: 'Caja original', tone: 'success' }], comment: 'Sin comentarios', lastBuyback: '$175.00', country: 'Argentina', status: 'pending', price: null, rejectReason: null },
-  { id: '4', model: 'MacBook Pro 16"', spec: 'M2 Max, 32GB, 1TB SSD', serial: '43K7719P08-21', grade: 'C', tags: [{ label: 'Pantalla', tone: 'danger' }, { label: 'Batería', tone: 'danger' }, { label: 'Bisagra', tone: 'danger' }, { label: 'Puerto USB-C', tone: 'danger' }, { label: 'WiFi', tone: 'danger' }], comment: 'Pantalla con líneas visibles', lastBuyback: '$140.00', country: 'Turkey', status: 'pending', price: null, rejectReason: null },
-  { id: '5', model: 'MacBook Air 15"', spec: 'M3, 16GB, 512GB SSD', serial: '29B4456Q77-23', grade: 'B', tags: [{ label: 'Cargador', tone: 'success' }, { label: 'Touch ID', tone: 'success' }], comment: 'Sin comentarios', lastBuyback: '$198.00', country: 'Venezuela', status: 'pending', price: null, rejectReason: null },
-  { id: '6', model: 'MacBook Pro 13"', spec: 'M1, 8GB, 256GB SSD', serial: '91C2287R33-20', grade: 'N', tags: [{ label: 'Caja original', tone: 'success' }, { label: 'Micrófono', tone: 'success' }], comment: 'Equipo con más de 5 años de uso', lastBuyback: '$0.00', country: 'Mexico', status: 'pending', price: null, rejectReason: null },
-  { id: '7', model: 'MacBook Pro 16"', spec: 'M3 Max, 36GB, 2TB SSD', serial: '58F9012S65-24', grade: 'A', tags: [{ label: 'Teclado', tone: 'success' }, { label: 'Carcasa', tone: 'success' }], comment: 'Sin comentarios', lastBuyback: '$225.00', country: 'Colombia', status: 'pending', price: null, rejectReason: null },
-]
-
-// The interactive quoting flow this page implements only really moves
-// through por-cotizar → pendiente-aprobacion → cancelado. The other members
-// below (aprobado, aprobado-parcial, rechazado, vencido, comprado) exist so
-// a buyback opened from one of the other list tabs shows its real status —
-// they're read-only here: none of this page's actions can produce them.
-type BuybackStatus =
-  | 'por-cotizar'
-  | 'pendiente-aprobacion'
-  | 'cancelado'
-  | 'aprobado'
-  | 'aprobado-parcial'
-  | 'rechazado'
-  | 'vencido'
-  | 'comprado'
+// not a separate screen). Type + per-stage mock lotes moved to bbxStore.ts.
 
 const STATUS_CONFIG: Record<BuybackStatus, { label: string; border: string; text: string; dot: string }> = {
   'por-cotizar': { label: 'Por cotizar', border: 'border-warning-fg', text: 'text-content-default', dot: statusDotWarning },
@@ -213,13 +104,34 @@ const SLA_CONFIG: Record<SlaType, { label: string; hours: number }> = {
   cto: { label: 'CTO – 72 horas', hours: 72 },
 }
 
-function formatUSD(value: number) {
-  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+// Dot-only color cue para el chip "Vencimiento cliente" — el chip en sí se
+// mantiene neutro (mismo estilo que País/Creación), sólo el dot cambia de
+// color según qué tan cerca está el vencimiento.
+const SEMAFORO_DOT: Record<ClienteVencimientoSemaforo, string> = {
+  ok: statusDotInformative,
+  warning: statusDotWarning,
+  vencido: statusDotDanger,
 }
 
-function pluralizeTools(count: number) {
-  return `${count} Herramienta${count === 1 ? '' : 's'}`
+// Subtipo de "Vencida" — se muestra junto al pill de cabecera, copy tal cual
+// la trae el modelo (Notion V2.0 §7.1 / data/buybacks.ts `VencidoSubtipo`).
+const VENCIDO_SUBTIPO_LABEL: Record<'sin_respuesta' | 'rechazado' | 'no_concretado', string> = {
+  sin_respuesta: 'Sin respuesta',
+  rechazado: 'Rechazado',
+  no_concretado: 'No concretado',
 }
+
+// Etapa derivada del estado real del BBX (Stage/STAGE_BY_STATUS, importados
+// de bbxStore.ts) — reemplaza el uso disperso de `buybackStatus` para
+// ramificar cabecera/contadores/cuerpo. `aprobado` y `aprobado_parcial`
+// colapsan en la misma etapa ("Por facturar": la unidad de trabajo pasa de
+// herramienta a factura/cupón por país, sin distinción entre aprobado 100% o
+// parcial). `rechazada` (BBX `rechazado`) no tiene vista dedicada en este
+// trabajo — cae al mismo fallback de tabla read-only que `pendiente_aprobacion`
+// (Bord-rechazadas ocultas, sin métricas propias).
+// DECISIÓN ABIERTA (heredada de docs/handoff-buybacks-listado-tabs.md §1): el
+// BBX `rechazado` tampoco tiene tab en el listado — no se le inventa vista
+// propia acá, sigue sin resolver con Camila/Martín.
 
 function Chip({ children, tone = 'default' }: { children: React.ReactNode; tone?: 'default' | 'informative' }) {
   return (
@@ -287,18 +199,76 @@ function MetricCard({
   )
 }
 
+// "Ver herramientas fuera del funnel" — usado en "Por facturar" (rechazadas
+// cliente/Bord) y "Comprada" (lo que no llegó a `vendido`): "sólo las
+// herramientas Aprobado avanzan... las Rechazado quedan fuera del funnel,
+// visibles solo para auditoría (colapsadas)" — se implementa como disclosure
+// colapsado, reutilizando `ToolTableRow` (components/ToolTable.tsx) tal cual.
+function AuditDisclosure({
+  rows,
+  onViewDetail,
+  onViewPhoto,
+}: {
+  rows: ToolRow[]
+  onViewDetail: (id: string) => void
+  onViewPhoto: (id: string, index: number) => void
+}) {
+  const [open, setOpen] = useState(false)
+  if (rows.length === 0) return null
+
+  return (
+    <div className="flex w-full flex-col gap-[12px]">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-[6px] text-[12px] font-medium leading-normal text-primary-default"
+      >
+        {open ? 'Ocultar' : 'Ver'} herramientas fuera del funnel ({rows.length})
+        <img src={iconChevronDown} alt="" className={`size-[10px] opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="w-full overflow-x-auto rounded-[8px] border border-solid border-stroke-default pb-[8px]">
+          <table className="w-full table-fixed border-collapse text-left">
+            <colgroup>
+              <col className="w-[176px]" />
+              <col className="w-[130px]" />
+              <col className="w-[105px]" />
+              <col className="w-[210px]" />
+              <col className="w-[90px]" />
+              <col className="w-[230px]" />
+              <col className="w-[150px]" />
+              <col className="w-[140px]" />
+            </colgroup>
+            <tbody>
+              {rows.map((row, i) => (
+                <ToolTableRow
+                  key={row.id}
+                  row={row}
+                  striped={i % 2 === 0}
+                  onViewDetail={() => onViewDetail(row.id)}
+                  onViewPhoto={(index) => onViewPhoto(row.id, index)}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function QuoteDetail() {
   const { id } = useParams()
-  // Real data from the list, looked up by the bbId in the URL — falls back to
-  // the original static placeholders when there's no match (e.g. someone
-  // hits this route directly with an id that isn't in the mock list). The
-  // per-tool table below stays its own separate mock either way: the list's
-  // Buyback type only has aggregate counts, not individual tool records.
-  const found = id ? findBuyback(id) : null
-  const buyback = found?.buyback ?? null
+  const bbKey = id ?? 'BB° 1234'
+  // Todo lo compartido con Dash (tools, buybackStatus, facturación, cupones,
+  // historial…) vive en el store — ver src/store/bbxStore.ts. Esto reemplaza
+  // los useState que antes tenía cada uno de esos campos: leerlos de acá
+  // (en vez de duplicarlos en local state) es lo que hace que una acción del
+  // cliente en Dash aparezca acá sin recargar, y viceversa.
+  const state = useBbxState(bbKey)
+  const { buyback, tools, buybackStatus, ofertaEnviadaAt, aprobadoClienteAt, clienteVencimiento, canceladaInfo, historialEstados, cuponesGenerados } = state
   const displayId = buyback?.bbId ?? id ?? 'BB° 1234'
 
-  const [tools, setTools] = useState<ToolRow[]>(INITIAL_TOOL_ROWS)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({})
   const [bulkPriceDraft, setBulkPriceDraft] = useState('')
@@ -307,30 +277,6 @@ export default function QuoteDetail() {
   const [rejectTargetIds, setRejectTargetIds] = useState<string[] | null>(null)
   const [orderSummaryOpen, setOrderSummaryOpen] = useState(false)
   const [cancelModalOpen, setCancelModalOpen] = useState(false)
-  // This page's interactive quote/reject/send flow only models 3 states
-  // (por-cotizar → pendiente-aprobacion → cancelado, via the actions below).
-  // Opened from any other list tab, the buyback's real `estado` is mapped
-  // 1:1 just for accurate display — those states are read-only here, this
-  // page's tools/SLA actions don't produce or expect them.
-  const [buybackStatus, setBuybackStatus] = useState<BuybackStatus>(() => {
-    if (!buyback) return 'por-cotizar'
-    switch (buyback.estado) {
-      case 'por_cotizar':
-        return 'por-cotizar'
-      case 'pendiente_aprobacion':
-        return 'pendiente-aprobacion'
-      case 'aprobado':
-        return 'aprobado'
-      case 'aprobado_parcial':
-        return 'aprobado-parcial'
-      case 'rechazado':
-        return 'rechazado'
-      case 'vencido':
-        return 'vencido'
-      case 'comprado':
-        return 'comprado'
-    }
-  })
   const [toast, setToast] = useState<{ title: string; message: string } | null>(null)
   // Explicit "edit" click on an already-managed row's price cell — independent
   // of hover, so the editor stays open (pre-filled) after the mouse leaves.
@@ -341,6 +287,14 @@ export default function QuoteDetail() {
   // open. Both directions (extend to CTO, revert to Regular) notify the
   // client, so both need explicit confirmation, not just the dropdown pick.
   const [slaConfirmTarget, setSlaConfirmTarget] = useState<SlaType | null>(null)
+  const [historialOpen, setHistorialOpen] = useState(false)
+  // Modo monitoreo: la oferta ya se envió, no se puede editar/reenviar/cancelar.
+  // Antes sólo cubría `pendiente-aprobacion` — eso dejaba `aprobado`/`vencido`/
+  // `comprado`/`cancelado` cayendo en la tabla interactiva de por_cotizar por
+  // accidente (un BBX cancelado seguía mostrando precio editable). Ahora es
+  // "todo menos por_cotizar", que es justamente el único estado con acción.
+  const readOnly = buybackStatus !== 'por-cotizar'
+  const stage: Stage = STAGE_BY_STATUS[buybackStatus]
 
   useEffect(() => {
     if (!toast) return
@@ -353,14 +307,59 @@ export default function QuoteDetail() {
   const totalAmount = quotedTools.reduce((sum, t) => sum + (t.price ?? 0), 0)
   // Per-country subtotal, alphabetical — only meaningful (and only shown) once
   // 2 or more countries are part of the quoted total.
-  const totalByCountry = Object.entries(
-    quotedTools.reduce<Record<string, number>>((acc, t) => {
-      acc[t.country] = (acc[t.country] ?? 0) + (t.price ?? 0)
-      return acc
-    }, {}),
-  )
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([country, amount]) => ({ country, amount: formatUSD(amount) }))
+  const totalByCountry = sumByCountry(quotedTools)
+  // Modo lectura: lo relevante ya no es el progreso de Martín (cotizadas/
+  // rechazadas por Bord, eso ya pasó) sino la decisión del CLIENTE sobre lo
+  // ofertado — ver ClientDecision arriba, mismo comentario de "reactivo por
+  // ítem" aplica acá.
+  // Deriva de `tools` completo (no de `quotedTools`) a propósito: en
+  // "Comprada" los ítems aprobados ya pasaron a `status: 'vendido'`, así que
+  // filtrar por `status === 'quoted'` los perdería — "Total aprobado" es un
+  // techo estable, no debe encogerse cuando un ítem se cupón-ea.
+  const approvedByClient = tools.filter((t) => t.clientDecision === 'aprobado')
+  const rejectedByClient = quotedTools.filter((t) => t.clientDecision === 'rechazado')
+  const pendingClientDecision = quotedTools.filter((t) => t.clientDecision === 'pendiente')
+  // "Total del lote" en modo lectura pasa a ser el monto ya APROBADO por el
+  // cliente, no el total ofertado — lo pendiente/rechazado todavía puede
+  // cambiar o nunca concretarse, así que el número relevante acá es lo que
+  // efectivamente se va a comprar hasta ahora.
+  const approvedAmount = approvedByClient.reduce((sum, t) => sum + (t.price ?? 0), 0)
+  const approvedByCountry = sumByCountry(approvedByClient)
+  // "Por facturar"/"Comprada": saldo restante por cupón-ear — lógica NUEVA de
+  // BBX (el componente de cupones del módulo de empresas no la calcula hoy).
+  // Recalcula en vivo conforme se generan cupones en esta sesión.
+  const cuponesGeneradosTotal = cuponesGenerados.reduce((sum, c) => sum + c.montoUsd, 0)
+  const saldoPorGenerar = approvedAmount - cuponesGeneradosTotal
+  const soldTools = tools.filter((t) => t.status === 'vendido')
+  // Cuerpo de "Por facturar" — agrupa `approvedByClient` por país (incluye
+  // los ya `vendido`, para que el bloque de su país no desaparezca al generar
+  // el cupón, sólo cambia de "pendiente" a "generado"). La agrupación en sí
+  // (buildFacturaBlocks) vive en bbxStore.ts — la comparte BbxDashDetail.tsx
+  // (Dash) para su propio panel de carga de factura — acá sólo se adapta la
+  // forma de `factura` al contrato que ya tenía InvoiceCountryPanel
+  // (`{ estado, comentarioFinanzas }` en vez de `{ pais, factura, ... }`).
+  const paisesFacturaBlocks: PaisFacturaBlock[] = buildFacturaBlocks(state).map((block) => ({
+    pais: block.pais,
+    herramientas: block.herramientas,
+    subtotalUsd: block.subtotalUsd,
+    factura: { estado: block.factura.factura, comentarioFinanzas: block.factura.comentarioFinanzas },
+    cupon: block.cupon,
+  }))
+  // "Facturas OK / esperadas" — esperadas = # de países con equipos aprobados.
+  const facturasOk = paisesFacturaBlocks.filter((p) => p.factura.estado === 'ok' || p.cupon.estado === 'generado').length
+  // Fila principal de la tabla (`comprada`/`vencida`/`cancelada`/
+  // `pendiente_aprobacion`/`rechazada` — `por_facturar` no usa tabla, ver
+  // InvoiceCountryPanel) + lo que queda "fuera del funnel" (rechazado por
+  // cliente o por Bord), sólo visible tras el toggle de auditoría.
+  const tableRows =
+    stage === 'comprada'
+      ? soldTools
+      : stage === 'vencida' || stage === 'cancelada'
+        ? tools // congelado completo, sin filtrar — acá sí es auditoría del snapshot
+        : tools.filter((row) => row.status !== 'rejected')
+  // Sólo "Comprada" — en "Por facturar" se decidió no mostrar lo que quedó
+  // fuera del funnel (a pedido explícito, sin disclosure de auditoría ahí).
+  const auditRows = stage === 'comprada' ? tools.filter((t) => t.status !== 'vendido') : []
   const allManaged = tools.every((t) => t.status !== 'pending')
   const canSend = allManaged && quotedTools.length > 0 && buybackStatus === 'por-cotizar'
   const canCancel = allManaged && quotedTools.length === 0 && buybackStatus === 'por-cotizar'
@@ -398,7 +397,7 @@ export default function QuoteDetail() {
     const draft = priceDrafts[id]
     const value = Number.parseFloat(draft ?? '')
     if (!draft || Number.isNaN(value) || value <= 0) return
-    setTools((prev) => prev.map((t) => (t.id === id ? { ...t, status: 'quoted', price: value, rejectReason: null } : t)))
+    bbxActions.setToolsPrice(bbKey, [id], value)
     setPriceDrafts((prev) => {
       const next = { ...prev }
       delete next[id]
@@ -410,33 +409,65 @@ export default function QuoteDetail() {
   function confirmBulkPrice() {
     const value = Number.parseFloat(bulkPriceDraft)
     if (!bulkPriceDraft || Number.isNaN(value) || value <= 0) return
-    setTools((prev) => prev.map((t) => (selectedIds.has(t.id) ? { ...t, status: 'quoted', price: value, rejectReason: null } : t)))
+    bbxActions.setToolsPrice(bbKey, [...selectedIds], value)
     clearSelection()
   }
 
   function confirmReject(reason: string) {
     if (!rejectTargetIds) return
-    setTools((prev) =>
-      prev.map((t) => (rejectTargetIds.includes(t.id) ? { ...t, status: 'rejected', rejectReason: reason, price: null } : t)),
-    )
+    bbxActions.rejectTools(bbKey, rejectTargetIds, reason)
     if (rejectTargetIds.length > 1) clearSelection()
     setRejectTargetIds(null)
     setEditingRowId(null)
   }
 
-  function confirmOrderSummary() {
+  // `dueDate` es la fecha ("YYYY-MM-DD") que Martín eligió en OrderSummaryModal
+  // como plazo de respuesta del cliente.
+  function confirmOrderSummary(dueDate: string) {
     setOrderSummaryOpen(false)
-    setBuybackStatus('pendiente-aprobacion')
+    bbxActions.sendOffer(bbKey, dueDate)
     setToast({
       title: 'Cotización enviada con éxito',
       message: 'Informamos al cliente mediante un correo electrónico y a través de Dash.',
     })
   }
 
-  function confirmCancel() {
+  // `reason` es el motivo que CancelBuybackModal ya emite.
+  function confirmCancel(reason: string) {
     setCancelModalOpen(false)
-    setBuybackStatus('cancelado')
+    // No hay sesión/auth en esta app — usuario mockeado, ver DECISIÓN ABIERTA 5.
+    bbxActions.cancelBuyback(bbKey, reason)
     setToast({ title: 'Buyback cancelado', message: 'Informamos al cliente mediante un correo electrónico y a través de Dash.' })
+  }
+
+  // A pedido explícito: Martín también puede aceptar/rechazar la factura de
+  // un país (antes era sólo lectura — ver el comentario en `facturaPorPais`).
+  // Sólo aplica mientras la factura sigue `pendiente`/`en_revision`; una vez
+  // resuelta (`ok`/`rechazada`) no hay botón de vuelta — mismo criterio que
+  // "generado" en cupones, no se modela una re-revisión.
+  function revisarFactura(pais: CountryFlag, decision: 'aceptar' | 'rechazar', motivo: string | null) {
+    bbxActions.revisarFactura(bbKey, pais, decision, motivo)
+    setToast(
+      decision === 'aceptar'
+        ? { title: 'Factura aprobada', message: `Ya se puede generar el cupón para ${pais}.` }
+        : { title: 'Factura rechazada', message: 'Informamos al cliente que debe volver a cargar la factura.' },
+    )
+  }
+
+  // Único punto de acción real de Martín en "Por facturar": generar el cupón
+  // de un país cuya factura ya está `ok`. `montoUsd` ya viene acotado por
+  // InvoiceCountryPanel (no puede exceder el subtotal del país ni el saldo
+  // restante del lote) — bbxActions.generarCupon revalida el saldo también
+  // (bloqueo duro, no sólo visual: el brief pide explícitamente que esto no
+  // sea una alerta ignorable).
+  function generarCupon(pais: CountryFlag, montoUsd: number) {
+    if (montoUsd <= 0 || montoUsd > saldoPorGenerar) return
+    bbxActions.generarCupon(bbKey, pais, montoUsd)
+    const consecutivo = `BBC-${displayId.replace(/\D/g, '')}-${String(cuponesGenerados.length + 1).padStart(2, '0')}`
+    setToast({
+      title: 'Cupón generado con éxito',
+      message: `${consecutivo} se envió por correo al cliente, al creador del BBX y al admin de la organización.`,
+    })
   }
 
   // Either direction (extend to CTO, revert to Regular) notifies the client,
@@ -459,6 +490,21 @@ export default function QuoteDetail() {
   }
 
   const statusConfig = STATUS_CONFIG[buybackStatus]
+  // "Última actualización" — label + valor varían por etapa (antes era un
+  // único placeholder fijo salvo `ofertaEnviadaAt`). `por_cotizar`/`rechazada`
+  // no tienen un hito propio definido — mantienen el placeholder de siempre.
+  const lastUpdate: { label: string; value: string | null } =
+    stage === 'pendiente_aprobacion'
+      ? { label: 'Oferta enviada al cliente', value: ofertaEnviadaAt }
+      : stage === 'por_facturar'
+        ? { label: 'Aprobado por el cliente', value: aprobadoClienteAt }
+        : stage === 'comprada'
+          ? { label: 'Cupón generado', value: cuponesGenerados.at(-1)?.fecha ?? null }
+          : stage === 'vencida'
+            ? { label: 'Vencido', value: buyback?.vencidoAt ?? null }
+            : stage === 'cancelada'
+              ? { label: 'Cancelada', value: canceladaInfo?.fecha ?? null }
+              : { label: 'Description', value: null }
 
   return (
     <div className="flex flex-col">
@@ -479,6 +525,13 @@ export default function QuoteDetail() {
                   <div className="h-full w-px shrink-0 bg-stroke-default" />
                   <img src={iconChevronDown} alt="" className="size-[12px] opacity-60" />
                 </div>
+                {/* Subtipo de "Vencida" — visible junto al pill, no reemplaza
+                    el estado de cabecera (que sigue siendo un único "Vencido"). */}
+                {stage === 'vencida' && buyback?.vencidoSubtipo && (
+                  <p className="whitespace-nowrap text-[12px] leading-normal text-content-secondary">
+                    {VENCIDO_SUBTIPO_LABEL[buyback.vencidoSubtipo]}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center gap-[8px]">
@@ -505,15 +558,26 @@ export default function QuoteDetail() {
                     {buyback?.creacion ?? '12/03/2026'}
                   </p>
                 </Chip>
+                {/* El SLA de Martín (dropdown Regular/CTO) sólo tiene sentido
+                    mientras el BBX sigue en `por_cotizar` — una vez enviada la
+                    oferta ese reloj ya terminó. En `pendiente_aprobacion` y
+                    `vencida` se reemplaza por un chip NO interactivo con el
+                    vencimiento del CLIENTE (contador/fecha distintos, ver
+                    `clienteVencimiento`) — mismo estilo neutro que País/Creación
+                    (el color queda sólo en el dot). En `por_facturar`/
+                    `comprada`/`cancelada` no hay nada que mostrar acá todavía:
+                    DECISIÓN ABIERTA 1 (brief) — no existe un SLA/deadline
+                    definido para la fase de facturación, así que no se agrega
+                    un chip inventado. */}
+                {stage === 'por_cotizar' ? (
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setSlaMenuOpen((v) => !v)}
-                    className={`flex shrink-0 items-center gap-[4px] rounded-[4px] border border-solid bg-layout-level-2 px-[8px] py-[4px] ${
-                      slaType === 'cto' ? 'border-warning-fg' : 'border-informative-fg'
-                    }`}
+                    className="flex shrink-0 items-center gap-[4px] rounded-[4px] border border-solid border-stroke-default bg-layout-level-2 px-[8px] py-[4px]"
                   >
-                    <p className={`whitespace-nowrap text-[12px] font-medium leading-normal ${slaType === 'cto' ? 'text-warning-fg' : 'text-informative-fg'}`}>
+                    <img src={slaType === 'cto' ? statusDotWarning : statusDotInformative} alt="" className="size-[8px] shrink-0" />
+                    <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-secondary">
                       SLA:
                     </p>
                     <p className="whitespace-nowrap text-[12px] leading-normal text-content-default">
@@ -563,6 +627,17 @@ export default function QuoteDetail() {
                     </>
                   )}
                 </div>
+                ) : (stage === 'pendiente_aprobacion' || stage === 'vencida') && clienteVencimiento ? (
+                  <Chip>
+                    <img src={SEMAFORO_DOT[clienteVencimiento.semaforo]} alt="" className="size-[8px] shrink-0" />
+                    <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-secondary">
+                      {stage === 'vencida' ? 'Venció:' : 'Vencimiento cliente:'}
+                    </p>
+                    <p className="whitespace-nowrap text-[12px] leading-normal text-content-default">
+                      {clienteVencimiento.fecha}
+                    </p>
+                  </Chip>
+                ) : null}
               </div>
             </div>
 
@@ -576,15 +651,25 @@ export default function QuoteDetail() {
                   <p className="w-[145px] whitespace-nowrap text-[10px] uppercase leading-normal tracking-[1px] text-content-secondary">
                     Última actualización
                   </p>
-                  <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-default">Description</p>
+                  <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-content-default">{lastUpdate.label}</p>
                   <div className="flex items-center gap-[4px] rounded-[24px] border border-solid border-informative-fg px-[6px] py-[1px]">
                     <img src={statusDotInformative} alt="" className="size-[8px]" />
-                    <p className="whitespace-nowrap text-[12px] leading-normal text-content-default">00/00/0000 - 00:00 PM</p>
+                    <p className="whitespace-nowrap text-[12px] leading-normal text-content-default">
+                      {lastUpdate.value ?? '00/00/0000 - 00:00 PM'}
+                    </p>
                   </div>
+                  {/* Quién/motivo de cancelación — sólo aplica acá, el resto de
+                      etapas no captura un actor (no hay auth en la app). */}
+                  {stage === 'cancelada' && canceladaInfo && (
+                    <p className="max-w-[280px] truncate text-[10px] leading-normal text-content-secondary">
+                      {canceladaInfo.usuario} · {canceladaInfo.motivo}
+                    </p>
+                  )}
                 </div>
               </div>
               <button
                 type="button"
+                onClick={() => setHistorialOpen(true)}
                 className="flex items-center justify-center gap-[8px] rounded-[8px] border border-solid border-primary-default p-[8px]"
               >
                 <p className="whitespace-nowrap text-[12px] font-medium leading-normal text-primary-default">Ver historial</p>
@@ -647,45 +732,167 @@ export default function QuoteDetail() {
 
         {/* Metric group card — the send/cancel button lives INSIDE this same
             bordered container, as its own rounded pill with breathing room
-            (not edge-to-edge, not tinted green when disabled) — per reference. */}
-        <div className="flex h-[66px] w-full items-center gap-[12px] rounded-[8px] border border-solid border-stroke-default bg-layout-level-1 pr-[12px]">
-          <MetricCard icon={iconCheck} iconBg="bg-success-bg" title="Cotizadas" value={pluralizeTools(quotedTools.length)} />
-          <MetricCard icon={iconX} iconBg="bg-danger-bg" title="Rechazadas" value={pluralizeTools(rejectedTools.length)} />
-          <MetricCard
-            icon={iconDollarSign}
-            iconBg="bg-informative-bg"
-            title="Total del lote"
-            value={formatUSD(totalAmount)}
-            breakdown={totalByCountry}
-            isLast
-          />
-          <div className="h-[32px] w-px shrink-0 bg-stroke-default" />
-          {canCancel ? (
-            <button
-              type="button"
-              onClick={() => setCancelModalOpen(true)}
-              className="flex h-[42px] shrink-0 items-center justify-center gap-[8px] rounded-[8px] bg-danger-fg px-[24px] text-white"
-            >
-              <p className="whitespace-nowrap text-[14px] font-medium leading-normal">Cancelar buyback</p>
-            </button>
-          ) : (
-            <button
-              type="button"
-              disabled={!canSend}
-              onClick={() => canSend && setOrderSummaryOpen(true)}
-              className={`flex h-[42px] min-w-[280px] shrink-0 items-center justify-center gap-[8px] rounded-[8px] px-[40px] ${
-                canSend ? 'bg-primary-default text-primary-fg' : 'bg-stroke-default text-content-secondary'
-              }`}
-            >
-              <img src={canSend ? iconSend : iconSendSecondary} alt="" className="size-[14px]" />
-              <p className="whitespace-nowrap text-[14px] font-medium leading-normal">
-                {buybackStatus === 'pendiente-aprobacion' ? 'Buyback enviado' : 'Enviar buyback'}
-              </p>
-            </button>
-          )}
-        </div>
+            (not edge-to-edge, not tinted green when disabled) — per reference.
+            Cada etapa cuenta sólo lo que sigue siendo relevante ahí (mismo
+            patrón que ya diferenciaba pendiente_aprobacion de por_cotizar).
+            `cancelada` no tiene contadores pedidos en el brief — se omite la
+            fila entera en vez de inventar una métrica. */}
+        {stage !== 'cancelada' && (
+          <div className="flex h-[66px] w-full items-center gap-[12px] rounded-[8px] border border-solid border-stroke-default bg-layout-level-1 pr-[12px]">
+            {stage === 'por_cotizar' ? (
+              <>
+                <MetricCard icon={iconCheck} iconBg="bg-success-bg" title="Cotizadas" value={pluralizeTools(quotedTools.length)} />
+                <MetricCard icon={iconX} iconBg="bg-danger-bg" title="Rechazadas" value={pluralizeTools(rejectedTools.length)} />
+                <MetricCard
+                  icon={iconDollarSign}
+                  iconBg="bg-informative-bg"
+                  title="Total del lote"
+                  value={formatUSD(totalAmount)}
+                  breakdown={totalByCountry}
+                  isLast
+                />
+                <div className="h-[32px] w-px shrink-0 bg-stroke-default" />
+                {canCancel ? (
+                  <button
+                    type="button"
+                    onClick={() => setCancelModalOpen(true)}
+                    className="flex h-[42px] shrink-0 items-center justify-center gap-[8px] rounded-[8px] bg-danger-fg px-[24px] text-white"
+                  >
+                    <p className="whitespace-nowrap text-[14px] font-medium leading-normal">Cancelar buyback</p>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!canSend}
+                    onClick={() => canSend && setOrderSummaryOpen(true)}
+                    className={`flex h-[42px] min-w-[280px] shrink-0 items-center justify-center gap-[8px] rounded-[8px] px-[40px] ${
+                      canSend ? 'bg-primary-default text-primary-fg' : 'bg-stroke-default text-content-secondary'
+                    }`}
+                  >
+                    <img src={canSend ? iconSend : iconSendSecondary} alt="" className="size-[14px]" />
+                    <p className="whitespace-nowrap text-[14px] font-medium leading-normal">Enviar buyback</p>
+                  </button>
+                )}
+              </>
+            ) : stage === 'pendiente_aprobacion' ? (
+              <>
+                <MetricCard icon={iconCheck} iconBg="bg-success-bg" title="Aprobadas" value={pluralizeTools(approvedByClient.length)} />
+                <MetricCard icon={iconX} iconBg="bg-danger-bg" title="Rechazadas" value={pluralizeTools(rejectedByClient.length)} />
+                <MetricCard icon={iconTime} iconBg="bg-informative-bg" title="Pendientes" value={pluralizeTools(pendingClientDecision.length)} />
+                <MetricCard
+                  icon={iconDollarSign}
+                  iconBg="bg-informative-bg"
+                  title="Total aprobado"
+                  value={formatUSD(approvedAmount)}
+                  breakdown={approvedByCountry}
+                  isLast
+                />
+              </>
+            ) : stage === 'por_facturar' ? (
+              <>
+                <MetricCard
+                  icon={iconCheck}
+                  iconBg="bg-success-bg"
+                  title="Facturas OK / esperadas"
+                  value={`${facturasOk}/${paisesFacturaBlocks.length}`}
+                />
+                <MetricCard icon={iconCheckCircle} iconBg="bg-success-bg" title="Cupones generados" value={String(cuponesGenerados.length)} />
+                <MetricCard
+                  icon={iconDollarSign}
+                  iconBg="bg-informative-bg"
+                  title="Total aprobado"
+                  value={formatUSD(approvedAmount)}
+                  breakdown={approvedByCountry}
+                />
+                {/* El dato más importante para Martín en esta etapa — lo que
+                    todavía puede convertirse en cupón. */}
+                <MetricCard icon={iconDollarSign} iconBg="bg-warning-bg" title="Saldo por generar" value={formatUSD(saldoPorGenerar)} isLast />
+              </>
+            ) : stage === 'comprada' ? (
+              <>
+                <MetricCard icon={iconCheck} iconBg="bg-success-bg" title="Herramientas compradas" value={pluralizeTools(soldTools.length)} />
+                <MetricCard
+                  icon={iconCheckCircle}
+                  iconBg="bg-success-bg"
+                  title="Cupones generados"
+                  value={`${cuponesGenerados.length} · ${formatUSD(cuponesGeneradosTotal)}`}
+                />
+                <MetricCard
+                  icon={iconDollarSign}
+                  iconBg="bg-informative-bg"
+                  title="Total aprobado"
+                  value={formatUSD(approvedAmount)}
+                  breakdown={approvedByCountry}
+                  isLast={saldoPorGenerar <= 0}
+                />
+                {/* DECISIÓN ABIERTA 2 (brief): ¿un BBX puede cerrar en "Comprada"
+                    con saldo aprobado que nunca se cupón-eó? Sólo se muestra
+                    si queda saldo — no se asume qué pasa con él. */}
+                {saldoPorGenerar > 0 && (
+                  <MetricCard icon={iconDollarSign} iconBg="bg-warning-bg" title="Saldo sin cupón" value={formatUSD(saldoPorGenerar)} isLast />
+                )}
+              </>
+            ) : stage === 'vencida' ? (
+              <>
+                <MetricCard icon={iconCheck} iconBg="bg-success-bg" title="Aprobadas al vencer" value={pluralizeTools(approvedByClient.length)} />
+                <MetricCard icon={iconX} iconBg="bg-danger-bg" title="Rechazadas al vencer" value={pluralizeTools(rejectedByClient.length)} />
+                <MetricCard icon={iconTime} iconBg="bg-informative-bg" title="Pendientes al vencer" value={pluralizeTools(pendingClientDecision.length)} />
+                {/* Nada se compró — informativo, no es plata "en juego". */}
+                <MetricCard
+                  icon={iconDollarSign}
+                  iconBg="bg-informative-bg"
+                  title="Se habría comprado"
+                  value={formatUSD(approvedAmount)}
+                  breakdown={approvedByCountry}
+                  isLast
+                />
+              </>
+            ) : null}
+          </div>
+        )}
 
-        {/* Filter + tab row */}
+        {/* "Por facturar" cambia de tabla plana a agrupado-por-país (cambio
+            estructural pedido explícitamente) — InvoiceCountryPanel reemplaza
+            por completo el filtro/tabla de abajo para esta etapa. Las
+            herramientas fuera del funnel (rechazadas cliente/Bord) no se
+            muestran acá — a pedido explícito, sin disclosure de auditoría. */}
+        {stage === 'por_facturar' && (
+          <InvoiceCountryPanel
+            paises={paisesFacturaBlocks}
+            saldoPorGenerar={saldoPorGenerar}
+            cuponesGenerados={cuponesGenerados}
+            onRevisarFactura={revisarFactura}
+            onGenerarCupon={generarCupon}
+          />
+        )}
+
+        {stage === 'vencida' && (
+          <div className="flex w-full items-center rounded-[8px] border border-solid border-danger-fg bg-danger-bg px-[16px] py-[10px]">
+            <p className="text-[12px] leading-normal text-content-default">
+              <span className="font-bold">Este BBX venció:</span> todos los equipos volvieron al estado que tenían en
+              inventario antes del BBX. La tabla de abajo muestra el estado en el que quedó cada uno justo antes de vencer
+              (congelado, sólo auditoría).
+            </p>
+          </div>
+        )}
+
+        {stage === 'cancelada' && (
+          <div className="flex w-full items-center rounded-[8px] border border-solid border-danger-fg bg-danger-bg px-[16px] py-[10px]">
+            <p className="text-[12px] leading-normal text-content-default">
+              <span className="font-bold">Buyback cancelado.</span>{' '}
+              {/* DECISIÓN ABIERTA 5 (brief): "Cancelada" no está en la spec —
+                  no se asume el efecto real sobre inventario, se asume el
+                  mismo comportamiento que "Vencido" (los equipos vuelven a su
+                  estado previo) sólo como placeholder a confirmar. */}
+              Efecto sobre inventario: se asume el mismo comportamiento que "Vencido" (los equipos vuelven a su estado
+              previo) — a confirmar con producto.
+            </p>
+          </div>
+        )}
+
+        {/* Filter + tab row — no aplica a "Por facturar" (sin tabla plana). */}
+        {stage !== 'por_facturar' && (
+        <>
         <div className="flex w-full items-center justify-between">
           <div className="flex items-center gap-[12px]">
             <img src={iconFilter} alt="" className="size-[14px] shrink-0 opacity-60" />
@@ -715,7 +922,18 @@ export default function QuoteDetail() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Table — readOnly usa el ToolTable compartido con Dash
+            (components/ToolTable.tsx, mismas filas/comportamientos que
+            BbxDashDetail.tsx); sólo el flujo interactivo por_cotizar
+            (checkbox + precio editable) sigue siendo 100% Soga, sin
+            equivalente en Dash. */}
+        {readOnly ? (
+          <ToolTable
+            rows={tableRows}
+            onViewDetail={setToolDetailId}
+            onViewPhoto={(id, index) => setImageViewer({ toolId: id, index })}
+          />
+        ) : (
         <div className="w-full overflow-x-auto rounded-[8px] border border-solid border-stroke-default pb-[8px]">
           {/* table-fixed + explicit per-column widths so the hover-revealed content
               (spec line, "Ver detalle", thumbnails, secondary tags) never reflows the
@@ -1004,9 +1222,32 @@ export default function QuoteDetail() {
             </tbody>
           </table>
         </div>
+        )}
+        {/* "Comprada": Facturas (por país, OK de Finanzas + PDF) y Cupones
+            generados — reutiliza el mismo InvoiceCountryPanel de "Por
+            facturar" en modo ya resuelto (todo `ok`/`generado`, sin acción
+            pendiente en el caso normal). */}
+        {stage === 'comprada' && paisesFacturaBlocks.length > 0 && (
+          <InvoiceCountryPanel
+            paises={paisesFacturaBlocks}
+            saldoPorGenerar={saldoPorGenerar}
+            cuponesGenerados={cuponesGenerados}
+            onRevisarFactura={revisarFactura}
+            onGenerarCupon={generarCupon}
+          />
+        )}
+        <AuditDisclosure
+          rows={auditRows}
+          onViewDetail={setToolDetailId}
+          onViewPhoto={(id, index) => setImageViewer({ toolId: id, index })}
+        />
+        </>
+        )}
       </div>
 
-      {selectedIds.size > 0 && (
+      {/* No hay selección posible en modo lectura (sin checkboxes en la
+          tabla), pero se guarda explícitamente por claridad. */}
+      {!readOnly && selectedIds.size > 0 && (
         <BulkActionIsland
           count={selectedIds.size}
           price={bulkPriceDraft}
@@ -1030,6 +1271,7 @@ export default function QuoteDetail() {
           model={toolDetail.model}
           serial={toolDetail.serial}
           specs={toolDetail.spec.split(', ')}
+          ofertaHistorial={toolDetail.ofertaHistorial}
           onClose={() => setToolDetailId(null)}
         />
       )}
@@ -1072,6 +1314,8 @@ export default function QuoteDetail() {
       )}
 
       {toast && <Toast title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
+
+      {historialOpen && <HistorialModal entries={historialEstados} onClose={() => setHistorialOpen(false)} />}
     </div>
   )
 }

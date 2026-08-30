@@ -68,3 +68,45 @@ body {
   font-family: var(--font-sans);
   background: var(--color-layout-background);
 }
+
+/*
+ * DASH surface override — docs/design-system.md "Dark (Dash)" column.
+ * Dash (BbxDashDetail.tsx + src/components/dash/*) is its own product
+ * surface, not a re-skin of Soga: it wraps its page root in this class so
+ * every existing token utility (bg-layout-level-1, text-content-secondary,
+ * border-stroke-default, bg-success-bg, etc.) resolves to the DARK hex from
+ * the doc instead of Soga's light one, via plain CSS-custom-property
+ * cascade — no new utility classes, no #dash-only component variants.
+ * Soga is untouched: nothing outside `.dash-theme` sees these values.
+ *
+ * Tokens NOT listed here (success/danger/warning/informative *-fg, and the
+ * *-bg alpha tokens except success-bg) already use the same hex/alpha in
+ * both modes per the doc, so they need no override. `stroke-interactive`
+ * has no dark value in the doc — propuesto: se deriva un tono intermedio
+ * entre stroke/default (#262B39) y content/secondary (#C6C7CB) en vez de
+ * inventar uno sin respaldo, igual que el doc marca otros huecos como
+ * *(propuesto)*.
+ */
+.dash-theme {
+  --color-layout-background: #070f21;
+  --color-layout-level-1: #1b202f;
+  --color-layout-level-2: #262b39;
+  --color-layout-opacity: rgb(255 255 255 / 5%);
+  --color-content-default: #ffffff;
+  --color-content-secondary: #c6c7cb;
+  --color-stroke-default: #262b39;
+  --color-stroke-interactive: #4b5468;
+  --color-primary-fg: #070f21;
+  --color-success-bg: rgb(9 164 50 / 10%);
+  /* Doc §1 "Complementary"/"Tags": estos dos SÍ difieren por modo (a
+     diferencia de blue/red/yellow y pink/purple/brown, iguales en ambos) —
+     sin uso todavía en ningún componente Dash, pero se completan igual para
+     que `.dash-theme` sea una implementación fiel de la columna completa,
+     no sólo de lo que ya se renderiza hoy. */
+  --color-complementary-default: #ffffff;
+  --color-tag-blue-bg: #23a5ff;
+
+  background: var(--color-layout-background);
+  color: var(--color-content-default);
+  color-scheme: dark;
+}

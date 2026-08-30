@@ -2,6 +2,7 @@ import iconModalClose from '../assets/quote-detail/icon-modal-close.svg'
 import iconInfo from '../assets/quote-detail/icon-info.svg'
 import iconBrandApple from '../assets/quote-detail/icon-brand-apple.svg'
 import iconQr from '../assets/quote-detail/icon-qr.svg'
+import iconDownload from '../assets/quote-detail/icon-download.svg'
 import statusDotSuccess from '../assets/quote-detail/status-dot-success.svg'
 import iconEditPencil from '../assets/quote-detail/icon-edit-pencil.svg'
 import iconLocationPin from '../assets/quote-detail/icon-location-pin.svg'
@@ -30,15 +31,24 @@ function Row({ label, value, editable }: { label: string; value: React.ReactNode
   )
 }
 
+function formatUSD(value: number) {
+  return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`
+}
+
 export default function ToolDetailDrawer({
   model,
   serial,
   specs,
+  ofertaHistorial,
   onClose,
 }: {
   model: string
   serial: string
   specs: string[]
+  /** Ofertas previas enviadas a aprobación para este mismo SKU+país
+      (pendiente_aprobacion, "Ver oferta" flow). Null/[] oculta el bloque de
+      historial por completo — no se renderiza ni vacío. */
+  ofertaHistorial?: { fecha: string; montoUsd: number }[] | null
   onClose: () => void
 }) {
   return (
@@ -95,10 +105,20 @@ export default function ToolDetailDrawer({
                 Historial
               </button>
             </div>
-            <button type="button" className="flex items-center gap-[8px] rounded-[6px] bg-content-default px-[8px] py-[8px]">
-              <img src={iconQr} alt="" className="size-[12px]" />
-              <p className="whitespace-nowrap text-[10px] leading-normal text-white">Descargar QR</p>
-            </button>
+            <div className="flex items-center gap-[8px]">
+              {/* Última inspección de la herramienta — sólo descarga, no hay
+                  affordance de edición (regla de "Pendiente de aprobación":
+                  la inspección no se puede editar desde acá). Sin backend de
+                  archivos en este mock, igual que "Descargar QR" al lado. */}
+              <button type="button" className="flex items-center gap-[8px] rounded-[6px] bg-content-default px-[8px] py-[8px]">
+                <img src={iconDownload} alt="" className="size-[12px] brightness-0 invert" />
+                <p className="whitespace-nowrap text-[10px] leading-normal text-white">Descargar inspección</p>
+              </button>
+              <button type="button" className="flex items-center gap-[8px] rounded-[6px] bg-content-default px-[8px] py-[8px]">
+                <img src={iconQr} alt="" className="size-[12px]" />
+                <p className="whitespace-nowrap text-[10px] leading-normal text-white">Descargar QR</p>
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col gap-[8px]">
@@ -148,6 +168,27 @@ export default function ToolDetailDrawer({
               <img src={dividerThin} alt="" className="h-px w-full" />
               <p className="text-[14px] leading-normal text-content-secondary">Esta herramienta no tiene comentario...</p>
             </div>
+
+            {/* Historial de ofertas enviadas a aprobación para este mismo
+                SKU+país — sólo se renderiza si hay algo que mostrar. Si
+                `ofertaHistorial` viene null/vacío el bloque entero se oculta,
+                no se muestra un estado vacío. */}
+            {ofertaHistorial && ofertaHistorial.length > 0 && (
+              <div className="flex flex-col gap-[12px] rounded-[12px] bg-layout-level-1 p-[12px]">
+                <p className="text-[14px] leading-normal text-content-secondary">Historial de ofertas:</p>
+                <img src={dividerThin} alt="" className="h-px w-full" />
+                <div className="flex flex-col gap-[8px]">
+                  {ofertaHistorial.map((entry) => (
+                    <div key={entry.fecha} className="flex items-center justify-between text-[12px] leading-normal">
+                      <span className="text-content-secondary">{entry.fecha}</span>
+                      <span className="text-content-default">
+                        <span className="font-medium">{formatUSD(entry.montoUsd)}</span> enviado a aprobación
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -21,7 +21,11 @@ export default function BuybackTable({ tab }: { tab: TabKey }) {
           key={buyback.bbId}
           buyback={buyback}
           tab={tab}
-          onRowClick={() => navigate(`/quotes/${encodeURIComponent(buyback.bbId)}`)}
+          // Lands on the Soga (interna) view by default — Martín is the one
+          // working this list. The dual-view tabs at the top of the detail
+          // page (BbxPerspectiveTabs) switch to the Dash (cliente) view for
+          // the same bbId without leaving the page.
+          onRowClick={() => navigate(`/soga/bbx/${encodeURIComponent(buyback.bbId)}`)}
         />
       ))}
     </div>
